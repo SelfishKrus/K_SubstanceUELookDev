@@ -48,7 +48,7 @@ uniform SamplerSparse opacity_tex;
 //: param custom { "default": "texture_name", "label": "Texture", "usage": "texture" } 
 uniform sampler2D u_sampler_BrdfLUT;
 
-//: param custom { "default": 0.46, "label": "Env diffuse", "widget": "color" } 
+//: param custom { "default": 0.18, "label": "Env diffuse", "widget": "color" } 
 uniform vec3 u_envDiffuse; 
 
 //: param custom { "default": true, "label": "Enable Sunlight" }
@@ -60,7 +60,6 @@ uniform float u_spin_sunlight_intensity;
 //: param custom { "default": 0, "label": "Sunlight Rotation", "min": 0.0, "max": 360 } 
 uniform float u_slider_sunlight_rotation; 
 
-
 // *************************************************************************
 // Custom shader lib 
 #define PI 3.14159265359
@@ -71,6 +70,11 @@ float saturate(float val)
 }
 
 vec3 saturate(vec3 val)
+{
+  return clamp(val, 0.0, 1.0);
+}
+
+vec2 saturate(vec2 val)
 {
   return clamp(val, 0.0, 1.0);
 }
@@ -107,7 +111,8 @@ vec3 fresnelSchlickWithRoughness(vec3 F0, float roughness, float cosTheta) {
 
 vec3 envBRDF(vec3 SpecularColor, float Roughness, float NoV) {
     // Importance sampled preintegrated G * F
-    vec2 AB = textureLod(u_sampler_BrdfLUT, vec2(NoV, Roughness), 0.0).rg;
+    vec2 uv = clamp(vec2(NoV, Roughness), 0.001, 0.999);
+    vec2 AB = textureLod(u_sampler_BrdfLUT, uv, 0.0).rg;
 
     // Anything less than 2% is physically impossible and is instead considered to be shadowing 
     vec3 GF = SpecularColor * AB.x + clamp(50.0 * SpecularColor.g, 0.0, 1.0) * AB.y;
@@ -116,6 +121,8 @@ vec3 envBRDF(vec3 SpecularColor, float Roughness, float NoV) {
 
 #define REFLECTION_CAPTURE_ROUGHEST_MIP 1.0
 #define REFLECTION_CAPTURE_ROUGHNESS_MIP_SCALE 1.2
+#define MIP_OFFSET 1.33 
+
 float ComputeReflectionCaptureMipFromRoughness(float Roughness, float CubemapMaxMip)
 {
     // Heuristic that maps roughness to mip level
@@ -203,14 +210,14 @@ void shade(V2F inputs)
   vec3 fre = fresnelSchlickWithRoughness(specColor, roughness, ndv);
   vec3 envBRDF = envBRDF(fre, roughness, ndv);
 
-  float mipLevel = ComputeReflectionCaptureMipFromRoughness(roughness, 10.0);
+  float mipLevel = ComputeReflectionCaptureMipFromRoughness(roughness, 11.0);
   vec3 normalES =  worldToEnvSpace(vectors.normal);
   vec3 eyeES =  worldToEnvSpace(vectors.eye);
   vec3 reflectDirES = -reflect(eyeES,normalES);
   vec3 radiance = envSample(reflectDirES, mipLevel);
 
   vec3 envSpecular = envBRDF * radiance;
-  specular += envSpecular;
+  specular += envSpecular * specOcclusion;
 
   // env diffuse
   vec3 envDiffuse = u_envDiffuse * diffColor;
